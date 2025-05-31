@@ -5,7 +5,7 @@ from collections import namedtuple
 
 # Load the CSV file
 df = pd.read_csv('sudoku.csv', header=None) # Replace with your actual file name
-potential = namedtuple('potential',['r','c','v', 'i'])
+potential = namedtuple('potential',['r','c','v'])
 
 def get_pod(i):
     if i < 3:
@@ -20,7 +20,7 @@ def validate_column(grid, col):
     for r in range(9):
         if len(grid[r][col]) == 1:
             if grid[r][col][0] in m:
-                print('invalid', r, col, grid[r][col][0], m)
+                #print('invalid', r, col, grid[r][col][0], m)
                 return False
             else:
                 m.add(grid[r][col][0])
@@ -31,7 +31,7 @@ def validate_row(grid, row):
     for c in range(9):
         if len(grid[row][c]) == 1:
             if grid[row][c][0] in m:
-                print('invalid', row, c, grid[row][c][0], m)
+                #print('invalid', row, c, grid[row][c][0], m)
                 return False
             else:
                 m.add(grid[row][c][0])
@@ -48,7 +48,7 @@ def validate_pod(grid, row, col):
                 pc = c + pod_c * 3
                 if len(grid[pr][pc]) == 1:
                     if grid[pr][pc][0] in m:
-                        print('invalid', row, col, r, c, pr, pc, grid[row][col][0], m)
+                        #print('invalid', row, col, r, c, pr, pc, grid[row][col][0], m)
                         return False
                     else:
                         m.add(grid[pr][pc][0])
@@ -56,7 +56,8 @@ def validate_pod(grid, row, col):
         print("error", pr, pc, row, col, grid[row][col])
     return True
     
-def attempt(grid):
+def eliminate(grid):
+    invalid = False
     changed = True
     loop = 0
     while changed:
@@ -80,8 +81,9 @@ def attempt(grid):
                                 #print('removed row', r, c, v, loop)
                                 break
                             else:
-                                print('invalid row', r, c)
-                                return (False, grid)
+                                invalid = True
+                                #print('invalid row', r, c)
+                                return (False, grid, '', invalid)
 
                 if changed:
                     break
@@ -101,8 +103,9 @@ def attempt(grid):
                                 #print('removed col', r,c, v, loop)
                                 break
                             else:
-                                print('invalid col', r, c)
-                                return (False, grid)
+                                invalid = True
+                                #print('invalid col', r, c)
+                                return (False, grid, '', invalid)
 
                 if changed:
                     break
@@ -127,8 +130,9 @@ def attempt(grid):
                                 #print('removed pod', r, c, v, i, loop)
                                 break
                             else:
-                                print('invalid pod', r, c)
-                                return (False, grid)
+                                invalid = True
+                                #print('invalid pod', r, c)
+                                return (False, grid, '', invalid)
 
                 if changed:
                     break
@@ -136,8 +140,7 @@ def attempt(grid):
                     break
 
         loop += 1
-
-    print('not changed')
+    #print('not changed')
 
     #check if solved
     solved = True
@@ -148,31 +151,86 @@ def attempt(grid):
                 #print('cell not solved', r, c, grid[r][c])
                 not_solved += str(r)+str(c)
                 solved = False
+            if len(grid[r][c]) == 0:
+                #print('dead cell', r, c)
+                solved = False
+                invalid = True
 
-    return (solved, grid, not_solved)
+    return (solved, not_solved, invalid)
 
-first_grid = [[[0] for _ in range(9)] for _ in range(9)]
+def guess(grid, possibility):
+    test_grid = copy_grid(grid)
+    test_grid[possibility.r][possibility.c] = [possibility.v]
+    for r in range(9):
+        if possibility.v in test_grid[r][possibility.c] and r != possibility.r:
+            test_grid[r][possibility.c].pop(test_grid[r][possibility.c].index(possibility.v))
+
+    if not validate_column(test_grid, possibility.c):
+        return (False, False)
+
+    for c in range(9):
+        if possibility.v in test_grid[possibility.r][c] and c != possibility.c:
+            test_grid[possibility.r][c].pop(test_grid[possibility.r][c].index(possibility.v))
+
+    if not validate_row(test_grid, possibility.r):
+        return (False, False)
+    
+    for r in range(3):
+        for c in range(3):
+            pr = get_pod(r)
+            pc = get_pod(c)
+            if possibility.v in test_grid[pr][pc] and pr != possibility.r and pc != possibility.c:
+                test_grid[pr][pc].pop(test_grid[pr][pc].index(possibility.v))
+
+    if not validate_pod(test_grid, possibility.r, possibility.c):
+        return (False, False)
+    
+    done, ns, inval = eliminate(test_grid)
+    ps = ns
+    if done and not inval:
+        return (True, True)
+    if inval:
+        return (False, False)
+    
+    while not done and not inval:
+        done, ns, inval = eliminate(test_grid)
+        if done and not inval:
+            return (True, True)
+        if inval:
+            return (False, False)
+        if ns == ps:
+            break
+        
+    return (False, True) #solved is false, possible is true
+
+def copy_grid(grid):
+    return [[[ x for x in middle_list] for middle_list in outer_list] for outer_list in grid]
+
+g = [[[0] for _ in range(9)] for _ in range(9)]
 for r in range(9):
     for c in range(9):
         value = df.iloc[r, c] 
         if value == 0 or pd.isna(df.iloc[r, c]):
-            first_grid[r][c][0] = 1
+            g[r][c][0] = 1
             for x in range(8):
-                first_grid[r][c].append(x+2)
+                g[r][c].append(x+2)
         else:
-            first_grid[r][c][0] = int(value)
+            g[r][c][0] = int(value)
 
-solved, g, ns = attempt(first_grid)
+solved, ns, invalid = eliminate(g)
 
 attempt_count = 0
 
 while not solved:
     print(attempt_count, " elimination attempt not solved")
     prev_ns = ns
-    solved, g, ns = attempt(g)
+    solved, ns, invalid = eliminate(g)
     if ns == prev_ns:
         break
     attempt_count += 1
+    if invalid:
+        print('elimination attempts',attempt_count, 'not valid')
+        break
 
 if not solved:
     extracted_list = [[str(inner_list) for inner_list in outer_list] for outer_list in g]
@@ -186,20 +244,43 @@ if not solved:
             #check if solved
             if len(g[r][c]) > 1:
                 for i in range(len(g[r][c])):
-                    potentials.append(potential(r, c, g[r][c][i], i))
+                    potentials.append(potential(r, c, g[r][c][i]))
 
-    for p in potentials:
-        backup = g[p.r][p.c]
-        g[p.r][p.c] = [p.v]
-        done, rg, ns = attempt(g)
-        if done:
-            solved = True
+    """
+    while not solved:
+        not_eliminated = []
+        eliminated = []
+        pot_count = len(potentials)
+        for p in potentials:
+            solved, possible = guess(g, p)
+            if possible:
+                print('not eliminated', p)
+                not_eliminated.append(p)
+            else:
+                print('eliminated', p)
+                eliminated.append(p)
+
+         
+        for e in eliminated:
+            try:
+                i = g[e.r][e.c].index(e.v)
+                g[e.r][e.c].pop()
+                print('popped', e)
+            except:
+                print('not popped', e)
+
+        for r in range(9):
+            for c in range(9):
+                #check if solved
+                if len(g[r][c]) > 1:
+                    for i in range(len(g[r][c])):
+                        potentials.append(potential(r, c, g[r][c][i]))
+
+        print('remaining potentials', len(not_eliminated))
+        if len(potentials) == pot_count:
+            print('no progress')
             break
-        else:
-            backup.pop(p.i)
-            g[p.r][p.c] = backup
-    
-
+"""
 if solved:
     print("solved")
     extracted_list = [[inner_list[0] for inner_list in outer_list] for outer_list in g]
